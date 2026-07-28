@@ -16,6 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x start.sh
 
 # Never run the app as root in production.
 RUN useradd --create-home --shell /bin/bash appuser \
@@ -25,9 +26,8 @@ USER appuser
 
 EXPOSE 8000
 
-# Migrations run as a separate step (docker-compose entrypoint / ECS
-# task) rather than baked into the image start command - running
-# `alembic upgrade head` automatically on every container boot is a
-# common source of race conditions when multiple instances start at
-# once.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# start.sh runs migrations + seed automatically on every boot before
+# starting the server - both steps are idempotent, so this is safe on
+# a single-instance deploy and means no manual Shell/bash access is
+# needed (Render's free tier doesn't include Shell access anyway).
+CMD ["./start.sh"]
