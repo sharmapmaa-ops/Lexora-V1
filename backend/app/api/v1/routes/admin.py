@@ -14,7 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
@@ -225,3 +225,53 @@ def update_company(payload: dict, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(company)
     return _row_to_dict(AdminRegistry.get("company_profile"), company)
+
+
+_LOGO_ALLOWED_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/svg+xml": "svg"}
+_LOGO_STORAGE_KEY_PREFIX = "company/logo"
+
+
+@router.post("/company/logo")
+async def upload_company_logo(file: UploadFile, db: Session = Depends(get_db)):
+    from app.core.storage import get_storage
+
+    content_type = file.content_type or ""
+    if content_type not in _LOGO_ALLOWED_TYPES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Logo must be a JPEG, PNG, WEBP, or SVG image.")
+
+    raw_bytes = await file.read()
+    if len(raw_bytes) > 3 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Logo is too large (max 3 MB).")
+
+    ext = _LOGO_ALLOWED_TYPES[content_type]
+    key = f"{_LOGO_STORAGE_KEY_PREFIX}.{ext}"
+    get_storage().save(key, raw_bytes)
+
+    company = db.get(CompanyProfile, 1)
+    if company is None:
+        company = CompanyProfile(id=1, name="My Company")
+        db.add(company)
+        db.flush()
+    company.logo_url = key
+    db.commit()
+    db.refresh(company)
+    return _row_to_dict(AdminRegistry.get("company_profile"), company)
+
+
+@router.get("/company/logo")
+def get_company_logo(db: Session = Depends(get_db)):
+    from fastapi.responses import Response
+
+    from app.core.storage import get_storage
+
+    company = db.get(CompanyProfile, 1)
+    if company is None or not company.logo_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No logo has been uploaded yet.")
+    storage = get_storage()
+    if not storage.exists(company.logo_url):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Logo file is missing.")
+    ext = company.logo_url.rsplit(".", 1)[-1]
+    media_type = {
+        "jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "svg": "image/svg+xml",
+    }.get(ext, "application/octet-stream")
+    return Response(content=storage.read(company.logo_url), media_type=media_type)

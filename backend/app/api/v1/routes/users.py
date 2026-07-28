@@ -8,10 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user, get_db
 from app.core.database import SessionLocal
+from app.core.email import send_email
+from app.core.security import hash_password, verify_password
 from app.core.storage import get_storage, new_storage_key
 from app.models.user import ApiKeyStatus, User
 from app.schemas.auth import UserPublic
-from app.schemas.user import ProfileUpdateRequest
+from app.schemas.user import ApiKeyPublic, MobileOtpVerifyRequest, PasswordChangeRequest, ProfileUpdateRequest
+from app.services.otp_service import generate_otp, verify_otp
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -29,12 +32,64 @@ def update_profile(
         current_user.first_name = payload.first_name
     if payload.last_name is not None:
         current_user.last_name = payload.last_name
-    if payload.mobile is not None:
-        current_user.mobile = payload.mobile
     if payload.gender is not None:
         current_user.gender = payload.gender
     if payload.birthdate is not None:
         current_user.birthdate = payload.birthdate
+    if payload.two_factor_enabled is not None:
+        current_user.two_factor_enabled = payload.two_factor_enabled
+
+    # Changing the mobile number invalidates any prior verification -
+    # the new number hasn't been proven to belong to this user yet.
+    if payload.mobile is not None and payload.mobile != current_user.mobile:
+        current_user.mobile = payload.mobile
+        current_user.mobile_verified = False
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/change-password", response_model=UserPublic)
+def change_password(
+    payload: PasswordChangeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect.")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/mobile/send-otp")
+def send_mobile_otp(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.mobile:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add a mobile number to your profile first.")
+    code = generate_otp(db, current_user.id, "mobile_verify")
+    # No SMS provider (e.g. Twilio) is configured yet in this rebuild -
+    # see the old project's Twilio WhatsApp OTP integration for the
+    # pattern to port. Emailing the code is a functional stand-in so
+    # the verify flow works end-to-end today; swap this line for an SMS
+    # send once a provider is wired up, no other code changes needed.
+    send_email(
+        current_user.email,
+        "Your mobile verification code",
+        f"Your verification code is: {code}\n\nThis code expires in 10 minutes.",
+    )
+    return {"message": "A verification code has been sent."}
+
+
+@router.post("/me/mobile/verify-otp", response_model=UserPublic)
+def verify_mobile_otp(
+    payload: MobileOtpVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    verify_otp(db, current_user.id, "mobile_verify", payload.code)
+    current_user.mobile_verified = True
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -90,11 +145,13 @@ def get_profile_photo(user_id: uuid.UUID):
         db.close()
 
 
-@router.post("/me/api-key", response_model=UserPublic)
+@router.post("/me/api-key", response_model=ApiKeyPublic)
 def generate_api_key(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """One active key per user, stored directly on the user row - see
     app/models/user.py for why this replaced a standalone api_keys
-    table in the old project."""
+    table in the old project. Returns only the key fields (ApiKeyPublic),
+    not the full account - a developer rotating their key has no reason
+    to receive their role/lock-status/plan-dates back in the response."""
     current_user.api_key = f"lx_live_{secrets.token_urlsafe(32)}"
     current_user.api_key_created_at = datetime.datetime.now(datetime.timezone.utc)
     current_user.api_key_status = ApiKeyStatus.active
@@ -103,7 +160,7 @@ def generate_api_key(current_user: User = Depends(get_current_user), db: Session
     return current_user
 
 
-@router.delete("/me/api-key", response_model=UserPublic)
+@router.delete("/me/api-key", response_model=ApiKeyPublic)
 def revoke_api_key(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.api_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active API key to revoke.")

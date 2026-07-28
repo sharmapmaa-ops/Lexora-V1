@@ -13,7 +13,6 @@ from app.models.user import User
 from app.schemas.processing_job import ProcessingJobPublic
 from app.services.processing.data_extraction_service import DataExtractionService
 from app.services.processing.job_service import process_bai2_upload
-from app.services.processing.lease_abstraction_service import LeaseAbstractionService
 from app.services.processing.ocr_service import OcrService
 from app.services.processing.translation_service import TranslationService
 
@@ -93,20 +92,24 @@ async def upload_ocr(
     return await service.process_upload(db, current_user, file.filename or "document.pdf", raw_bytes)
 
 
-@router.post("/lease-abstraction/upload", response_model=ProcessingJobPublic, status_code=status.HTTP_201_CREATED)
+@router.post("/lease-abstraction/upload", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 async def upload_lease_abstraction(
     file: UploadFile,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
-    raw_bytes = await file.read()
-    if len(raw_bytes) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "File is too large (max 10 MB).")
-    if not raw_bytes:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Uploaded file is empty.")
-
-    service = LeaseAbstractionService(get_llm_client())
-    return await service.process_upload(db, current_user, file.filename or "lease.pdf", raw_bytes)
+    # Deliberately disabled for now - see LeaseAbstractionService's
+    # module docstring. The pipeline logic exists and is tested against
+    # a fake LLM client, but hasn't been reviewed against the old
+    # project's actual multi-agent extraction logic yet, and this
+    # service's real-document file-storage needs haven't been finalized
+    # (unlike the other four pipelines, which are approved to use local
+    # disk storage). Returning 503 here rather than silently processing
+    # keeps that decision enforced at the API level, not just hidden in
+    # the frontend menu.
+    raise HTTPException(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Lease Abstraction is coming soon and isn't available yet.",
+    )
 
 
 @router.get("/jobs", response_model=list[ProcessingJobPublic])

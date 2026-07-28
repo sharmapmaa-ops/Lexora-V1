@@ -6,11 +6,36 @@ before any real signups happen.
 Run with: `python -m app.seed`
 """
 from decimal import Decimal
+from pathlib import Path
 
 from app.core.database import session_scope
 from app.core.security import hash_password
+from app.core.storage import get_storage
+from app.models.company import CompanyProfile
 from app.models.plan import Plan, PlanServicePricing, ServiceCode
 from app.models.user import User, UserRole, UserStatus
+
+SEED_ASSETS_DIR = Path(__file__).resolve().parent.parent / "seed_assets"
+
+# Carried over from the old project's company.json - update freely via
+# the Company Settings admin page once live; this just gives a fresh
+# environment sensible defaults instead of a blank profile.
+COMPANY_DEFAULTS = {
+    "name": "Lexora AI Solutions",
+    "address": "123 Tech Park, Silicon Valley, CA 94025",
+    "working_hours": "Mon\u2013Fri: 9:00 AM \u2013 6:00 PM (PST)",
+    "working_days": "Monday \u2013 Friday (Weekends Closed)",
+    "email": "support@lexora.support",
+    "phone": "+1 (800) 555-LEXO",
+    "whatsapp": "+919904143278",
+    "currency": "INR",
+    "social_links": {
+        "facebook": "https://www.facebook.com/lexora",
+        "instagram": "https://www.instagram.com/lexora",
+        "linkedin": "https://www.linkedin.com/company/lexora",
+        "youtube": "https://www.youtube.com/@lexora",
+    },
+}
 
 
 PLAN_DEFS = [
@@ -66,6 +91,32 @@ def seed_plans(db) -> None:
                 db.add(PlanServicePricing(plan_id=plan.id, service_code=code, unit=unit, price=price))
 
 
+def seed_company(db) -> None:
+    company = db.get(CompanyProfile, 1)
+    is_new = company is None
+    if is_new:
+        company = CompanyProfile(id=1, name=COMPANY_DEFAULTS["name"])
+        db.add(company)
+        db.flush()
+
+    # Only fill in defaults for a brand-new profile - never overwrite
+    # values someone has already edited via Company Settings.
+    if is_new:
+        for key, value in COMPANY_DEFAULTS.items():
+            setattr(company, key, value)
+
+        logo_path = SEED_ASSETS_DIR / "lexora-logo.png"
+        if logo_path.is_file():
+            key = "company/logo.png"
+            get_storage().save(key, logo_path.read_bytes())
+            company.logo_url = key
+            print("Seeded company profile with default logo.")
+        else:
+            print("Seeded company profile (no seed_assets/lexora-logo.png found - logo left unset).")
+    else:
+        print("Company profile already exists - leaving it as-is.")
+
+
 def seed_admin_user(db, email: str, password: str) -> None:
     existing = db.query(User).filter(User.email == email).first()
     if existing:
@@ -87,8 +138,9 @@ def seed_admin_user(db, email: str, password: str) -> None:
 def main() -> None:
     with session_scope() as db:
         seed_plans(db)
+        seed_company(db)
         seed_admin_user(db, "admin@lexoraaisolutions.com", "ChangeMe123!")
-    print("Seed complete: 3 plans (with per-service pricing) + admin user ensured.")
+    print("Seed complete: 3 plans (with per-service pricing) + company profile + admin user ensured.")
 
 
 if __name__ == "__main__":
