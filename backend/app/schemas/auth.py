@@ -54,6 +54,8 @@ class UserPublic(BaseModel):
     first_name: str
     last_name: str
     mobile: str | None
+    gender: str | None
+    birthdate: datetime.date | None
     photo_url: str | None
     role: str
     status: str
