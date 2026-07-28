@@ -115,6 +115,56 @@ storage, and failure handling for every one of them.
   before wiring up the UI (3-page merge produced exactly 3 pages;
   single-page extraction produced exactly 1).
 
+### Latest round of fixes/additions
+
+- **Forgot Password**: email-based OTP flow (`/auth/forgot-password` +
+  `/auth/reset-password`), verified end-to-end with real requests -
+  wrong code rejected, correct code resets the password, login with
+  the new password succeeds immediately after.
+- **Mobile verification**: OTP sent (via email today - see note below)
+  and verified via `/users/me/mobile/send-otp` +
+  `/users/me/mobile/verify-otp`, tested end-to-end. Changing the mobile
+  number automatically un-verifies it until re-confirmed.
+- **Password change** and **Two-Factor Authentication toggle** on the
+  Profile page.
+- **Company Settings**: seeded with the old project's real company
+  details and logo on first run (`backend/seed_assets/lexora-logo.png`,
+  verified byte-for-byte identical after upload+download), with a full
+  edit UI (logo upload, social links, contact info).
+- **Free Services expanded**: from 3 to **26 genuinely working
+  client-side tools** across 6 categories (PDF Tools, Image Tools,
+  Calculators, Data Tools, Document Builders, Utilities) - matching the
+  old project's 29-tool catalogue, with 4 explicitly marked "coming
+  soon" (PDF to Word, PDF Form Filler, ETL, Barcode Generator) rather
+  than faked. Split PDF now supports extracting into one combined file
+  or a separate file per page-range group.
+- **API responses trimmed**: the API key generate/revoke endpoints now
+  return only key-relevant fields (`ApiKeyPublic`), not the full user
+  account - a developer rotating their key has no reason to receive
+  their role, lock status, or plan dates back.
+- **Single web service**: the earlier two-service split (FastAPI +
+  nginx/React) has been replaced by one combined image - see
+  `Dockerfile` at the repo root. FastAPI serves the built frontend
+  directly (`app/main.py`'s static-file mount), eliminating the
+  nginx/SNI/Host-header proxy complexity entirely. Verified: one
+  process correctly serves the API, the SPA's client-side routes, and
+  static assets, with API 404s staying real JSON 404s rather than
+  falling back to the frontend's index.html.
+- **Admin Panel is now actually editable** (a real bug in the previous
+  pass - it only displayed data, with no Save/Delete/Add Row wiring).
+- **Lease Abstraction disabled** (both frontend menu and the API route
+  itself returns 503) until its core logic and file-storage plan are
+  reviewed against the old project's actual multi-agent pipeline.
+
+Known follow-ups: no SMS provider is wired up yet for mobile OTP (the
+old project used Twilio WhatsApp OTP - see its `ContentSid` template
+pattern for how to port that; email is a real, working stand-in for
+now, not a stub). Translation/Data Extraction/OCR use straightforward
+prompts written for this rebuild rather than the old project's exact
+prompt wording - porting those verbatim into each service's
+`SYSTEM_PROMPT` constant is a good next step once real LLM credentials
+are available to test against.
+
 ## What's next (not deferred pipelines anymore — infra/scale work)
 
 All five processing pipelines exist and are tested. What's left is
@@ -208,24 +258,35 @@ docker compose up --build
 Starts Postgres, runs migrations + seed, starts the API, and serves the
 built frontend via nginx.
 
-## Deploying to AWS
+## Deploying (Render, AWS, or anywhere that runs a Dockerfile)
 
-- **Database**: RDS for PostgreSQL. Point `DATABASE_URL` at the RDS
-  endpoint; nothing else changes.
-- **Backend**: the `backend/Dockerfile` image runs on App Runner,
-  Lightsail Containers, ECS Fargate, or a plain EC2 + Docker — pick
-  based on how much ops overhead you want. Run
-  `alembic upgrade head && python -m app.seed` once per deploy (the
-  Docker Compose `command:` shows the pattern) rather than baking it
-  into the image's own startup, so scaling to multiple instances never
-  races migrations.
-- **Frontend**: the built `dist/` is static — S3 + CloudFront, or the
-  same container approach via `frontend/Dockerfile`, both work fine.
+**Recommended: one service, using the `Dockerfile` at the repo root**
+(not `backend/Dockerfile` or `frontend/Dockerfile`). Set the platform's
+"Root Directory" / build context to the repo root. This builds the
+frontend, bundles it into the backend image, and serves everything -
+API and website - from one FastAPI process on one URL. No second
+service, no reverse proxy, no CORS/SNI/Host-header configuration to get
+right. `start.sh` runs migrations + seed automatically on every boot,
+so no Shell/manual-migration step is needed either.
+
+- **Database**: RDS for PostgreSQL (AWS) or the platform's managed
+  Postgres (Render, etc.). Point `DATABASE_URL` at it - the URL's driver
+  scheme is auto-normalized (`postgres://` or `postgresql://` both work,
+  see `app/core/config.py`), so pasting whatever the provider gives you
+  verbatim just works.
 - **File storage**: `STORAGE_BACKEND=s3` in `.env` once you're ready to
   point uploads at S3 instead of local disk (the storage abstraction
   point is `app/core/config.py`'s `STORAGE_*` settings — the actual S3
   client wiring is one of the next things to add alongside the
   processing pipelines).
+- The old two-service setup (separate `backend/Dockerfile` +
+  `frontend/Dockerfile` behind nginx) still exists and still works if
+  you specifically want the frontend and backend independently
+  scalable/deployable - just point two separate services at
+  `backend/` and `frontend/` respectively, and set `BACKEND_URL` +
+  `BACKEND_HOST` env vars on the frontend service (see
+  `frontend/nginx.conf.template`). For this project's size, the
+  single-service approach above is simpler and is what's recommended.
 
 ## First login
 

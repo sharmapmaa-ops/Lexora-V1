@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
+import { ForgotPasswordPage } from "@/features/auth/ForgotPasswordPage";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
@@ -9,7 +10,6 @@ import { Bai2UploadPage } from "@/features/services/Bai2UploadPage";
 import { TranslationUploadPage } from "@/features/services/TranslationUploadPage";
 import { DataExtractionUploadPage } from "@/features/services/DataExtractionUploadPage";
 import { OcrUploadPage } from "@/features/services/OcrUploadPage";
-import { LeaseAbstractionUploadPage } from "@/features/services/LeaseAbstractionUploadPage";
 import { FreeServicesPage } from "@/features/services/FreeServicesPage";
 import { PlansPage } from "@/features/plans/PlansPage";
 import { PaymentsPage } from "@/features/payments/PaymentsPage";
@@ -25,6 +25,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
@@ -35,7 +36,6 @@ export default function App() {
           <Route path="/services/translation" element={<TranslationUploadPage />} />
           <Route path="/services/data-extraction" element={<DataExtractionUploadPage />} />
           <Route path="/services/ocr" element={<OcrUploadPage />} />
-          <Route path="/services/lease-abstraction" element={<LeaseAbstractionUploadPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/support" element={<SupportPage />} />

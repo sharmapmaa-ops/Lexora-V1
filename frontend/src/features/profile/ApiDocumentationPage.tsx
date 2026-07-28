@@ -29,7 +29,7 @@ export function ApiDocumentationPage() {
   const generateMutation = useMutation({
     mutationFn: () => api.post("/users/me/api-key"),
     onSuccess: (res) => {
-      setUser(res.data);
+      if (user) setUser({ ...user, ...res.data });
       setError(null);
     },
     onError: (err) => setError(apiErrorMessage(err)),
@@ -38,7 +38,7 @@ export function ApiDocumentationPage() {
   const revokeMutation = useMutation({
     mutationFn: () => api.delete("/users/me/api-key"),
     onSuccess: (res) => {
-      setUser(res.data);
+      if (user) setUser({ ...user, ...res.data });
       queryClient.invalidateQueries();
     },
     onError: (err) => setError(apiErrorMessage(err)),

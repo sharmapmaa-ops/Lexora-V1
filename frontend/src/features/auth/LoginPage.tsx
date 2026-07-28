@@ -80,9 +80,14 @@ export function LoginPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="label !mb-0">Password</label>
+                <Link to="/forgot-password" className="text-xs font-semibold text-brand-500 hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
               <input
-                className="input"
+                className="input mt-1.5"
                 type="password"
                 required
                 value={password}

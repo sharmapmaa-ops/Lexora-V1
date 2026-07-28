@@ -2,7 +2,7 @@ import { FileText, Languages, ScanLine, Database, Landmark } from "lucide-react"
 import { Link } from "react-router-dom";
 
 const SERVICES = [
-  { code: "lease_abstraction", label: "Lease Abstraction", icon: FileText, desc: "Extract structured lease data from PDF documents.", href: "/services/lease-abstraction" },
+  { code: "lease_abstraction", label: "Lease Abstraction", icon: FileText, desc: "Extract structured lease data from PDF documents.", href: null },
   { code: "translation", label: "Translation", icon: Languages, desc: "Translate documents while preserving layout.", href: "/services/translation" },
   { code: "ocr", label: "OCR", icon: ScanLine, desc: "Extract text from scanned documents and images.", href: "/services/ocr" },
   { code: "data_extraction", label: "Data Extraction", icon: Database, desc: "Pull structured fields from any document.", href: "/services/data-extraction" },

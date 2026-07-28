@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { PDFDocument, degrees } from "pdf-lib";
-import { Combine, Scissors, RotateCw, Upload, Download, X } from "lucide-react";
+import { Combine, Scissors, RotateCw, Upload, Download, X, FileText } from "lucide-react";
+import { CreatePdf, PdfToImage, CompressPdf } from "@/features/services/free-tools/MorePdfTools";
+import { ImageToPdf, ImageCompressor, ImageCropper, ResizePhoto } from "@/features/services/free-tools/ImageTools";
+import { EmiCalculator, GratuityCalculator, AgeCalculator, UnitConverter, CurrencyConverter } from "@/features/services/free-tools/Calculators";
+import { WordCounter, JsonCsvConverter, DataComparison } from "@/features/services/free-tools/DataTools";
+import { InvoiceGenerator, QuotationGenerator, ReceiptGenerator, EmailTemplateBuilder, LetterBuilder } from "@/features/services/free-tools/DocumentBuilders";
+import { TimezoneConverter, PasswordGenerator, QrCodeGenerator } from "@/features/services/free-tools/Utilities";
 
 function downloadBytes(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
@@ -32,7 +38,7 @@ function MergeTool() {
       }
       const out = await merged.save();
       downloadBytes(out, "merged.pdf");
-    } catch (err) {
+    } catch {
       setError("Could not merge these files — make sure they're all valid PDFs.");
     } finally {
       setBusy(false);
@@ -91,6 +97,7 @@ function SplitTool() {
   const [file, setFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [ranges, setRanges] = useState("1");
+  const [splitMode, setSplitMode] = useState<"combined" | "separate">("combined");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,10 +109,14 @@ function SplitTool() {
     setPageCount(doc.getPageCount());
   }
 
-  function parseRanges(input: string, max: number): number[] {
-    const indices: number[] = [];
+  function parseGroups(input: string, max: number): number[][] {
+    // Each comma-separated group becomes its own output file in
+    // "separate" mode (e.g. "1-3, 5" -> two files: pages 1-3, and page 5).
+    // In "combined" mode all groups are merged into a single output.
+    const groups: number[][] = [];
     for (const part of input.split(",").map((p) => p.trim()).filter(Boolean)) {
       const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+      const indices: number[] = [];
       if (rangeMatch) {
         const start = Number(rangeMatch[1]);
         const end = Number(rangeMatch[2]);
@@ -114,8 +125,9 @@ function SplitTool() {
         const n = Number(part);
         if (n >= 1 && n <= max) indices.push(n - 1);
       }
+      if (indices.length) groups.push(indices);
     }
-    return indices;
+    return groups;
   }
 
   async function handleSplit() {
@@ -123,19 +135,31 @@ function SplitTool() {
     setError(null);
     setBusy(true);
     try {
-      const indices = parseRanges(ranges, pageCount);
-      if (!indices.length) {
+      const groups = parseGroups(ranges, pageCount);
+      if (!groups.length) {
         setError(`Enter valid page numbers between 1 and ${pageCount} (e.g. "1-3, 5").`);
         setBusy(false);
         return;
       }
       const bytes = await file.arrayBuffer();
       const src = await PDFDocument.load(bytes);
-      const out = await PDFDocument.create();
-      const pages = await out.copyPages(src, indices);
-      pages.forEach((p) => out.addPage(p));
-      const outBytes = await out.save();
-      downloadBytes(outBytes, "extracted-pages.pdf");
+
+      if (splitMode === "combined") {
+        const out = await PDFDocument.create();
+        const allIndices = groups.flat();
+        const pages = await out.copyPages(src, allIndices);
+        pages.forEach((p) => out.addPage(p));
+        downloadBytes(await out.save(), "extracted-pages.pdf");
+      } else {
+        // One PDF per comma-separated group - genuinely "split into
+        // multiple files", not just one combined extraction.
+        for (let i = 0; i < groups.length; i++) {
+          const out = await PDFDocument.create();
+          const pages = await out.copyPages(src, groups[i]);
+          pages.forEach((p) => out.addPage(p));
+          downloadBytes(await out.save(), `split-part-${i + 1}.pdf`);
+        }
+      }
     } catch {
       setError("Could not split this file — make sure it's a valid PDF.");
     } finally {
@@ -151,7 +175,7 @@ function SplitTool() {
         </div>
         <div>
           <h3 className="font-display font-semibold text-brand-900">Split PDF</h3>
-          <p className="text-sm text-brand-400">Extract specific pages into a new PDF.</p>
+          <p className="text-sm text-brand-400">Extract specific pages — as one combined file, or as separate files per group.</p>
         </div>
       </div>
 
@@ -172,10 +196,29 @@ function SplitTool() {
       </label>
 
       {file && (
-        <div className="mt-3">
-          <label className="label">Pages to extract ({pageCount} total)</label>
-          <input className="input" value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="e.g. 1-3, 5" />
-        </div>
+        <>
+          <div className="mt-3">
+            <label className="label">Page groups ({pageCount} total)</label>
+            <input className="input" value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="e.g. 1-3, 5" />
+            <p className="mt-1 text-xs text-brand-300">
+              Each comma-separated group (e.g. "1-3" and "5") becomes its own file in Separate mode.
+            </p>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => setSplitMode("combined")}
+              className={splitMode === "combined" ? "btn-primary !py-1.5 text-xs" : "btn-secondary !py-1.5 text-xs"}
+            >
+              Merge into one file
+            </button>
+            <button
+              onClick={() => setSplitMode("separate")}
+              className={splitMode === "separate" ? "btn-primary !py-1.5 text-xs" : "btn-secondary !py-1.5 text-xs"}
+            >
+              Separate file per group
+            </button>
+          </div>
+        </>
       )}
       {error && <p className="mt-2 text-sm text-danger-600">{error}</p>}
       <button onClick={handleSplit} disabled={!file || busy} className="btn-primary mt-4">
@@ -249,7 +292,91 @@ function RotateTool() {
   );
 }
 
+function ComingSoonCard({ label, desc }: { label: string; desc: string }) {
+  return (
+    <div className="card border-dashed opacity-60">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-300">
+          <FileText size={20} />
+        </div>
+        <div>
+          <h3 className="font-display font-semibold text-brand-700">{label}</h3>
+          <p className="text-sm text-brand-400">{desc}</p>
+        </div>
+      </div>
+      <span className="mt-4 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-400">
+        Coming soon
+      </span>
+    </div>
+  );
+}
+
+const CATEGORIES: Record<string, { icon: string; render: () => JSX.Element[] }> = {
+  "PDF Tools": {
+    icon: "\uD83D\uDCC4",
+    render: () => [
+      <MergeTool key="merge" />,
+      <SplitTool key="split" />,
+      <RotateTool key="rotate" />,
+      <CompressPdf key="compress" />,
+      <PdfToImage key="pdf-to-image" />,
+      <CreatePdf key="create-pdf" />,
+      <ComingSoonCard key="pdf-to-word" label="PDF to Word" desc="Convert a PDF into an editable Word document." />,
+      <ComingSoonCard key="form-filler" label="PDF Form Filler" desc="Fill in fillable PDF form fields." />,
+    ],
+  },
+  "Image Tools": {
+    icon: "\uD83D\uDDBC\uFE0F",
+    render: () => [
+      <ImageToPdf key="image-to-pdf" />,
+      <ImageCompressor key="image-compressor" />,
+      <ImageCropper key="image-cropper" />,
+      <ResizePhoto key="resize-photo" />,
+    ],
+  },
+  Calculators: {
+    icon: "\uD83E\uDDEE",
+    render: () => [
+      <EmiCalculator key="emi" />,
+      <GratuityCalculator key="gratuity" />,
+      <AgeCalculator key="age" />,
+      <UnitConverter key="unit" />,
+      <CurrencyConverter key="currency" />,
+    ],
+  },
+  "Data Tools": {
+    icon: "\uD83D\uDCCA",
+    render: () => [
+      <WordCounter key="word-counter" />,
+      <JsonCsvConverter key="json-csv" />,
+      <DataComparison key="data-comparison" />,
+      <ComingSoonCard key="etl" label="ETL" desc="Extract, transform, and load data between formats." />,
+    ],
+  },
+  "Document Builders": {
+    icon: "\uD83D\uDCDD",
+    render: () => [
+      <InvoiceGenerator key="invoice" />,
+      <QuotationGenerator key="quotation" />,
+      <ReceiptGenerator key="receipt" />,
+      <EmailTemplateBuilder key="email" />,
+      <LetterBuilder key="letter" />,
+    ],
+  },
+  Utilities: {
+    icon: "\uD83D\uDD27",
+    render: () => [
+      <TimezoneConverter key="timezone" />,
+      <PasswordGenerator key="password" />,
+      <QrCodeGenerator key="qr" />,
+      <ComingSoonCard key="barcode" label="Barcode Generator" desc="Generate common 1D barcode formats." />,
+    ],
+  },
+};
+
 export function FreeServicesPage() {
+  const [category, setCategory] = useState<keyof typeof CATEGORIES>("PDF Tools");
+
   return (
     <div className="max-w-5xl">
       <h1 className="font-display text-2xl font-bold text-brand-900">Free Services</h1>
@@ -258,10 +385,20 @@ export function FreeServicesPage() {
         always free, regardless of your plan.
       </p>
 
+      <div className="mt-6 flex flex-wrap gap-2">
+        {Object.keys(CATEGORIES).map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat as keyof typeof CATEGORIES)}
+            className={category === cat ? "btn-primary !py-2" : "btn-secondary !py-2"}
+          >
+            {CATEGORIES[cat].icon} {cat}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <MergeTool />
-        <SplitTool />
-        <RotateTool />
+        {CATEGORIES[category].render()}
       </div>
     </div>
   );
