@@ -10,7 +10,7 @@ wherever a config value is needed.
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field, PostgresDsn
+from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,27 @@ class Settings(BaseSettings):
     )
     DB_POOL_SIZE: int = Field(default=10)
     DB_MAX_OVERFLOW: int = Field(default=20)
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_db_driver(cls, v):
+        """Render (and most other hosts: Railway, Supabase, Heroku, ...)
+        hand out a plain `postgresql://...` URL with no driver suffix.
+        SQLAlchemy then defaults to the `psycopg2` dialect, which isn't
+        installed in this project (we use `psycopg[binary]`, i.e.
+        psycopg v3) - that mismatch is what caused
+        "ModuleNotFoundError: No module named 'psycopg2'" at boot.
+        Rewriting the scheme here means pasting the host's URL in
+        verbatim always works, regardless of whether `+psycopg` was
+        remembered."""
+        if isinstance(v, str) and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+psycopg://", 1)
+        if isinstance(v, str) and v.startswith("postgres://"):
+            # Some providers (notably Heroku-style URLs) use the
+            # `postgres://` scheme, which SQLAlchemy doesn't recognize
+            # at all - not just the wrong driver.
+            return v.replace("postgres://", "postgresql+psycopg://", 1)
+        return v
 
     # ---- Auth / security ----
     SECRET_KEY: str = Field(..., description="Used to sign JWTs - never commit a real value.")
