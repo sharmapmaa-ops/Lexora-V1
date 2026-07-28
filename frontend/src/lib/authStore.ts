@@ -6,6 +6,10 @@ export interface CurrentUser {
   email: string;
   first_name: string;
   last_name: string;
+  mobile: string | null;
+  gender: string | null;
+  birthdate: string | null;
+  photo_url: string | null;
   role: "user" | "admin" | "developer";
   status: string;
   plan_id: string;

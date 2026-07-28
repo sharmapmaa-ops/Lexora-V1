@@ -10,10 +10,15 @@ import { TranslationUploadPage } from "@/features/services/TranslationUploadPage
 import { DataExtractionUploadPage } from "@/features/services/DataExtractionUploadPage";
 import { OcrUploadPage } from "@/features/services/OcrUploadPage";
 import { LeaseAbstractionUploadPage } from "@/features/services/LeaseAbstractionUploadPage";
+import { FreeServicesPage } from "@/features/services/FreeServicesPage";
 import { PlansPage } from "@/features/plans/PlansPage";
 import { PaymentsPage } from "@/features/payments/PaymentsPage";
 import { SupportPage } from "@/features/support/SupportPage";
+import { ProfilePage } from "@/features/profile/ProfilePage";
+import { ApiDocumentationPage } from "@/features/profile/ApiDocumentationPage";
 import { AdminPage } from "@/features/admin/AdminPage";
+import { AdminOverviewPage } from "@/features/admin/AdminOverviewPage";
+import { CompanySettingsPage } from "@/features/admin/CompanySettingsPage";
 
 export default function App() {
   return (
@@ -25,6 +30,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/services" element={<ServicesPage />} />
+          <Route path="/services/free" element={<FreeServicesPage />} />
           <Route path="/services/bai2" element={<Bai2UploadPage />} />
           <Route path="/services/translation" element={<TranslationUploadPage />} />
           <Route path="/services/data-extraction" element={<DataExtractionUploadPage />} />
@@ -33,8 +39,12 @@ export default function App() {
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/support" element={<SupportPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/api-documentation" element={<ApiDocumentationPage />} />
           <Route element={<ProtectedRoute adminOnly />}>
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/admin/overview" element={<AdminOverviewPage />} />
+            <Route path="/admin/company" element={<CompanySettingsPage />} />
           </Route>
         </Route>
       </Route>

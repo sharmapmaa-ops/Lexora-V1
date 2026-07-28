@@ -92,6 +92,29 @@ Extraction, OCR, Lease Abstraction) are now wired end-to-end** on the
 new architecture, with 30 backend tests covering billing correctness,
 storage, and failure handling for every one of them.
 
+- **Admin Overview dashboard**: platform-wide stats (total users, revenue,
+  open tickets, plan distribution, jobs-by-service) from one aggregate
+  endpoint (`GET /admin/overview`), rendered with charts on the frontend.
+  Verified against real seeded data.
+- **User Profile**: view/edit name, mobile, gender, birthdate; upload a
+  profile photo (stored via the same storage abstraction as processing
+  jobs, served back through a public `/users/photo/{user_id}` endpoint
+  since `<img>` tags can't send Authorization headers). Verified
+  end-to-end: uploaded a real JPEG, fetched it back, correct bytes.
+- **API Documentation page**: plan-gated exactly like the old project
+  (Standard/Professional only; Free plan users see an upgrade prompt
+  instead) — generate/copy/revoke your API key, plus a link to the
+  live Swagger reference at `/api/docs` (auto-generated from the actual
+  route type hints, so it's never out of sync with the real API).
+- **Company Settings** (admin-only): edit the company profile shown on
+  invoices, backed by dedicated `GET`/`PATCH /admin/company` endpoints.
+- **Free Services**: genuine, working client-side PDF tools (Merge,
+  Split/extract pages, Rotate) using `pdf-lib` — files never leave the
+  browser, no backend cost, matching the old project's "free tools"
+  concept. Verified the merge/split logic directly with `pdf-lib`
+  before wiring up the UI (3-page merge produced exactly 3 pages;
+  single-page extraction produced exactly 1).
+
 ## What's next (not deferred pipelines anymore — infra/scale work)
 
 All five processing pipelines exist and are tested. What's left is
