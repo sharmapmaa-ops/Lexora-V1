@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, Upload, Download, AlertCircle } from "lucide-react";
+import { Languages, Upload, Download, AlertCircle, ArrowLeft } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 import { Badge } from "@/components/ui/Badge";
 
@@ -54,6 +55,9 @@ export function TranslationUploadPage() {
 
   return (
     <div className="max-w-4xl">
+      <Link to="/services" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-500 hover:text-brand-700">
+        <ArrowLeft size={15} /> Back to Services
+      </Link>
       <div className="flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-100 text-brand-600">
           <Languages size={22} />

@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Wallet, TrendingDown, PiggyBank, ArrowRight } from "lucide-react";
+import { Wallet, TrendingDown, PiggyBank, ArrowRight, Receipt, TrendingUp, Hourglass } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { StatCard } from "@/components/ui/StatCard";
+import { Badge } from "@/components/ui/Badge";
 import { useAuthStore } from "@/lib/authStore";
 
 interface Balance {
@@ -11,7 +12,24 @@ interface Balance {
   current_balance: string;
 }
 
-const money = (v: string) => `\u20b9${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+interface Transaction {
+  id: string;
+  type: string;
+  status: string;
+  description: string;
+  payment_mode: string;
+  credit: string;
+  debit: string;
+  created_at: string;
+}
+
+const money = (v: string | number) => `\u20b9${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
 
 export function DashboardPage() {
   const { user } = useAuthStore();
@@ -19,6 +37,15 @@ export function DashboardPage() {
     queryKey: ["balance"],
     queryFn: () => api.get("/payments/balance").then((r) => r.data),
   });
+  const { data: history } = useQuery<Transaction[]>({
+    queryKey: ["payment-history"],
+    queryFn: () => api.get("/payments/history").then((r) => r.data),
+  });
+
+  const todayTxns = (history ?? []).filter((t) => isToday(t.created_at));
+  const todayCredit = todayTxns.reduce((sum, t) => sum + Number(t.credit), 0);
+  const todayDebit = todayTxns.reduce((sum, t) => sum + Number(t.debit), 0);
+  const pendingCount = todayTxns.filter((t) => t.status !== "success" && t.status !== "failed").length;
 
   return (
     <div className="max-w-6xl">
@@ -33,7 +60,60 @@ export function DashboardPage() {
         <StatCard label="Current Balance" value={money(balance?.current_balance ?? "0")} icon={PiggyBank} tone="brand" />
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+      {/* Today's Transactions table */}
+      <div className="card mt-6">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-lg font-semibold text-brand-900">Today's Transactions</h3>
+          <Link to="/payments" className="text-sm font-semibold text-brand-600 hover:underline">
+            View All Transactions &rarr;
+          </Link>
+        </div>
+        <div className="mt-4 max-h-72 overflow-auto rounded-lg border border-brand-100">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-brand-900 text-left text-white">
+              <tr>
+                <th className="px-4 py-2.5 font-semibold">Date &amp; Time</th>
+                <th className="px-4 py-2.5 font-semibold">Description</th>
+                <th className="px-4 py-2.5 font-semibold">Credit</th>
+                <th className="px-4 py-2.5 font-semibold">Debit</th>
+                <th className="px-4 py-2.5 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {todayTxns.map((t) => (
+                <tr key={t.id} className="border-t border-brand-50">
+                  <td className="px-4 py-2.5 text-brand-500">{new Date(t.created_at).toLocaleTimeString()}</td>
+                  <td className="px-4 py-2.5">{t.description}</td>
+                  <td className="px-4 py-2.5 text-accent-600">{Number(t.credit) ? money(t.credit) : ""}</td>
+                  <td className="px-4 py-2.5 text-danger-600">{Number(t.debit) ? money(t.debit) : ""}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge tone={t.status === "success" ? "success" : t.status === "failed" ? "danger" : "neutral"}>
+                      {t.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+              {!todayTxns.length && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-brand-300">
+                    No transactions today yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Today's summary cards */}
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Today's Transactions" value={String(todayTxns.length)} icon={Receipt} tone="brand" />
+        <StatCard label="Today's Credits" value={money(todayCredit)} icon={TrendingUp} tone="success" />
+        <StatCard label="Today's Debits" value={money(todayDebit)} icon={TrendingDown} tone="danger" />
+        <StatCard label="Pending Activities" value={String(pendingCount)} icon={Hourglass} tone="brand" />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="card">
           <h3 className="font-display text-lg font-semibold text-brand-900">Your plan</h3>
           <p className="mt-1 text-sm text-brand-400">

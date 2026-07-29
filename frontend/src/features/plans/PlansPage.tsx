@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Star, Sparkles } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import { clsx } from "clsx";
-import { Link } from "react-router-dom";
 import { api, apiErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/lib/authStore";
 import { useState } from "react";
@@ -23,31 +22,7 @@ interface Plan {
   service_pricing: ServicePricing[];
 }
 
-const SERVICE_LABELS: Record<string, string> = {
-  translation: "Translation",
-  ocr: "OCR",
-  data_extraction: "Data Extraction",
-  bai2: "BAI2",
-  lease_abstraction: "Lease Abstraction",
-};
-
 const RUPEE = "\u20b9";
-
-/** Multiple services on the same plan often share the exact same rate
- * (Translation/OCR/Data Extraction/BAI2 are all priced identically) -
- * rather than repeating that price on four separate lines, group by
- * (price, unit) and list the services together on one line. Lease
- * Abstraction is priced per-document rather than per-page, so it
- * naturally lands in its own group. */
-function groupPricing(pricing: ServicePricing[]) {
-  const groups = new Map<string, { price: string; unit: string; services: string[] }>();
-  for (const sp of pricing) {
-    const key = `${sp.price}-${sp.unit}`;
-    if (!groups.has(key)) groups.set(key, { price: sp.price, unit: sp.unit, services: [] });
-    groups.get(key)!.services.push(SERVICE_LABELS[sp.service_code] ?? sp.service_code);
-  }
-  return Array.from(groups.values());
-}
 
 export function PlansPage() {
   const { user, setUser } = useAuthStore();
@@ -94,13 +69,16 @@ export function PlansPage() {
               : Number(plan.monthly_price) > 0
                 ? "Upgrade Now"
                 : "Get Started";
-          const pricingGroups = groupPricing(plan.service_pricing);
+          // Every service is billed at the same per-document rate on a
+          // plan (see backend/app/seed.py) - just show that one rate,
+          // no need to enumerate which services it covers.
+          const rate = plan.service_pricing[0];
 
           return (
             <div
               key={plan.id}
               className={clsx(
-                "card relative flex flex-col",
+                "card relative flex h-full flex-col",
                 plan.is_featured && "border-2 border-brand-400 shadow-card-hover"
               )}
             >
@@ -119,39 +97,34 @@ export function PlansPage() {
               </div>
 
               <ul className="mt-5 space-y-2.5 border-t border-brand-100 pt-5">
-                {pricingGroups.map((group) => (
-                  <li key={`${group.price}-${group.unit}`} className="flex items-start gap-2 text-sm text-brand-800">
+                {rate && (
+                  <li className="flex items-start gap-2 text-sm text-brand-800">
                     <Check size={16} className="mt-0.5 shrink-0 text-accent-600" />
-                    {RUPEE}{Number(group.price)} / {group.unit} ({group.services.join(", ")})
+                    {RUPEE}{Number(rate.price)} / {rate.unit}
                   </li>
-                ))}
+                )}
                 {plan.features.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm text-brand-800">
                     <Check size={16} className="mt-0.5 shrink-0 text-accent-600" />
                     {f}
                   </li>
                 ))}
+                {/* Same style as any other feature line - not a special
+                    callout box (that felt like an ad for a different
+                    product living inside this card). */}
+                <li className="flex items-start gap-2 text-sm text-brand-800">
+                  <Check size={16} className="mt-0.5 shrink-0 text-accent-600" />
+                  All Free Services
+                </li>
               </ul>
 
-              {/* Free tools (Merge/Split/Rotate PDF, etc.) are available
-                  on every plan, including Free - shown once per card so
-                  it's clear an upgrade isn't required for these. */}
-              <div className="mt-4 rounded-lg border border-dashed border-accent-500/30 bg-accent-500/5 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-accent-600">
-                  <Sparkles size={13} /> Free Services included
-                </div>
-                <p className="mt-1 text-xs text-brand-500">
-                  Merge, split &amp; rotate PDFs — free on every plan, no charge, ever.{" "}
-                  <Link to="/services/free" className="font-semibold underline">
-                    Try them
-                  </Link>
-                </p>
-              </div>
-
+              {/* mt-auto pushes this to the bottom of the card
+                  regardless of how many feature lines are above it,
+                  since the card itself is a flex column (h-full flex flex-col). */}
               <button
                 disabled={isMine || switchMutation.isPending}
                 onClick={() => switchMutation.mutate(plan.id)}
-                className={clsx("mt-4", isMine ? "btn-secondary cursor-default" : "btn-primary")}
+                className={clsx("mt-auto pt-4", isMine ? "btn-secondary cursor-default" : "btn-primary")}
               >
                 {ctaLabel}
               </button>
