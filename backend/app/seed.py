@@ -43,25 +43,23 @@ PLAN_DEFS = [
         "id": "free", "name": "Free", "icon": "\U0001F193", "monthly_price": Decimal("0"),
         "is_featured": False, "sort_order": 0,
         "features": ["Email Support", "Advanced Dashboard Access"],
-        "pricing": {"translation": Decimal("400"), "ocr": Decimal("400"),
-                    "data_extraction": Decimal("400"), "bai2": Decimal("400"),
-                    "lease_abstraction": Decimal("800")},
+        # Every service is billed per-document at the same rate on a
+        # given plan - there's no reason for Lease Abstraction to be
+        # priced differently from the other four, and "per page" never
+        # matched how documents are actually billed.
+        "rate": Decimal("400"),
     },
     {
         "id": "standard", "name": "Standard", "icon": "\u2b50", "monthly_price": Decimal("2500"),
         "is_featured": False, "sort_order": 1,
         "features": ["Email Support", "Advanced Dashboard Access", "API Documentation Access"],
-        "pricing": {"translation": Decimal("175"), "ocr": Decimal("175"),
-                    "data_extraction": Decimal("175"), "bai2": Decimal("175"),
-                    "lease_abstraction": Decimal("650")},
+        "rate": Decimal("175"),
     },
     {
         "id": "professional", "name": "Professional", "icon": "\U0001F680", "monthly_price": Decimal("6500"),
         "is_featured": True, "sort_order": 2,
         "features": ["Email Support", "Advanced Dashboard Access", "API Documentation Access"],
-        "pricing": {"translation": Decimal("85"), "ocr": Decimal("85"),
-                    "data_extraction": Decimal("85"), "bai2": Decimal("85"),
-                    "lease_abstraction": Decimal("400")},
+        "rate": Decimal("85"),
     },
 ]
 
@@ -81,9 +79,9 @@ def seed_plans(db) -> None:
         db.flush()
 
         existing_pricing = {row.service_code: row for row in plan.service_pricing}
-        for service_name, price in plan_def["pricing"].items():
-            code = ServiceCode(service_name)
-            unit = "document" if code == ServiceCode.lease_abstraction else "page"
+        for code in ServiceCode:
+            price = plan_def["rate"]
+            unit = "document"
             if code in existing_pricing:
                 existing_pricing[code].price = price
                 existing_pricing[code].unit = unit

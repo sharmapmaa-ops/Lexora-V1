@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1.routes import admin, auth, payments, plans, processing, support, users
+from app.api.v1.routes import admin, auth, payments, plans, processing, public, support, users
 from app.core.config import settings
 
 app = FastAPI(
@@ -27,6 +27,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
 app.include_router(plans.router, prefix=settings.API_V1_PREFIX)
+app.include_router(public.router, prefix=settings.API_V1_PREFIX)
 app.include_router(payments.router, prefix=settings.API_V1_PREFIX)
 app.include_router(support.router, prefix=settings.API_V1_PREFIX)
 app.include_router(processing.router, prefix=settings.API_V1_PREFIX)
