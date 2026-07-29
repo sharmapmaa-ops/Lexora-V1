@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user, get_db
 from app.models.company import CompanyProfile
+from app.models.notification import NotificationSeverity
 from app.models.transaction import Transaction
 from app.models.user import User, UserRole
 from app.schemas.transaction import (
@@ -23,6 +24,7 @@ from app.services.billing_service import (
     verify_and_credit_wallet,
 )
 from app.services.invoice_service import build_invoice_pdf
+from app.services.notification_service import notify
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -63,11 +65,18 @@ def verify_payment(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return verify_and_credit_wallet(
+    transaction = verify_and_credit_wallet(
         db, current_user,
         payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature,
         payload.description,
     )
+    notify(
+        db, current_user.id,
+        "Wallet top-up successful",
+        f"\u20b9{transaction.credit} was added to your wallet.",
+        NotificationSeverity.success,
+    )
+    return transaction
 
 
 @router.get("/invoice.pdf")

@@ -48,15 +48,53 @@ def _spec_or_404(name: str) -> AdminTableSpec:
     return spec
 
 
+def _field_type_and_options(col) -> tuple[str, list[str] | None]:
+    """Derive a semantic field type from the SQLAlchemy column - this is
+    what lets the frontend render a date picker for a date column, a
+    dropdown for an enum, a checkbox for a boolean, a file-upload button
+    for an image URL column, etc., instead of treating every column as
+    a plain text input regardless of what it actually holds."""
+    python_type = getattr(col.type, "python_type", None)
+
+    # Enum columns (role, status, type, ...) get a dropdown of their
+    # actual allowed values - not a free-text field a typo could break.
+    if python_type is not None and hasattr(python_type, "__members__"):
+        return "select", [member.value for member in python_type]
+
+    if python_type is bool:
+        return "boolean", None
+    if python_type is date:
+        return "date", None
+    if python_type is datetime:
+        return "datetime", None
+    if python_type in (int, float, Decimal):
+        return "number", None
+    if python_type is dict:
+        return "json", None
+    if python_type is list:
+        return "multiselect", None
+
+    # Column-name heuristic for image fields - there's no SQL type for
+    # "this VARCHAR happens to store an image storage key", so the name
+    # is the only signal available.
+    if col.key in ("photo_url", "logo_url") or (col.key.endswith("_url") and "photo" in col.key):
+        return "image", None
+
+    return "text", None
+
+
 def _columns(spec: AdminTableSpec) -> list[dict]:
     mapper = inspect(spec.model)
     cols = []
     for col in mapper.columns:
         if col.key in spec.hidden_fields:
             continue
+        field_type, options = _field_type_and_options(col)
         cols.append({
             "name": col.key,
             "type": str(col.type),
+            "field_type": field_type,
+            "options": options,
             "primary_key": col.primary_key,
             "editable": col.key not in spec.readonly_fields and not col.primary_key,
         })
@@ -140,6 +178,40 @@ def delete_row(name: str, row_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Row not found.")
     db.delete(row)
     db.commit()
+
+
+@router.post("/tables/{name}/{row_id}/upload/{column}")
+async def upload_row_image(
+    name: str, row_id: str, column: str, file: UploadFile, db: Session = Depends(get_db),
+):
+    """Generic image upload for any admin-manageable table's image
+    column - the row-edit form's image picker (any field with
+    field_type='image') posts here rather than each table needing its
+    own bespoke upload route (as company logo previously did)."""
+    from app.core.storage import get_storage
+
+    spec = _spec_or_404(name)
+    row = db.get(spec.model, row_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Row not found.")
+    if column in spec.hidden_fields or column in spec.readonly_fields or not hasattr(row, column):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"'{column}' is not an editable field on this table.")
+
+    allowed_types = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+    content_type = file.content_type or ""
+    if content_type not in allowed_types:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Image must be JPEG, PNG, or WEBP.")
+    raw_bytes = await file.read()
+    if len(raw_bytes) > 3 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Image is too large (max 3 MB).")
+
+    ext = allowed_types[content_type]
+    key = f"admin-uploads/{name}/{row_id}/{column}.{ext}"
+    get_storage().save(key, raw_bytes)
+    setattr(row, column, key)
+    db.commit()
+    db.refresh(row)
+    return _row_to_dict(spec, row)
 
 
 @router.get("/overview")

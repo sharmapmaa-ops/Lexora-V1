@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.models.plan import Plan
 from app.models.transaction import Transaction, TransactionStatus, TransactionType
 from app.models.user import PlanStatus, User
+from app.services.notification_service import notify
 
 
 def get_wallet_balance(db: Session, user_id) -> Decimal:
@@ -65,6 +66,11 @@ def switch_plan(db: Session, user: User, target_plan_id: str) -> User:
     user.plan_ends_at = datetime.date.today() + datetime.timedelta(days=30)
     db.commit()
     db.refresh(user)
+    notify(
+        db, user.id,
+        f"Plan changed to {target_plan.name}",
+        f"You are now on the {target_plan.name} plan ({target_plan.currency} {target_plan.monthly_price}/month).",
+    )
     return user
 
 

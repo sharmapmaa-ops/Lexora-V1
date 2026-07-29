@@ -40,11 +40,49 @@ def public_company_info(db: Session = Depends(get_db)):
 
 @router.get("/company/logo")
 def public_company_logo(db: Session = Depends(get_db)):
-    # Delegates to the same admin logo-serving logic - logos aren't
-    # sensitive, and the login page needs to show one before anyone is
-    # authenticated.
-    from app.api.v1.routes.admin import get_company_logo
-    return get_company_logo(db)
+    from fastapi import HTTPException, status
+    from fastapi.responses import Response
+
+    from app.core.storage import get_storage
+
+    company = db.get(CompanyProfile, 1)
+    if company is None or not company.logo_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No logo has been uploaded yet.")
+    storage = get_storage()
+    if not storage.exists(company.logo_url):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Logo file is missing.")
+    ext = company.logo_url.rsplit(".", 1)[-1]
+    media_type = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp", "svg": "image/svg+xml"}.get(ext, "application/octet-stream")
+    return Response(content=storage.read(company.logo_url), media_type=media_type)
+
+
+@router.get("/admin-image/{table}/{row_id}/{column}")
+def admin_row_image(table: str, row_id: str, column: str, db: Session = Depends(get_db)):
+    """Serves an image field's stored file for the Admin Panel's
+    row-edit form - deliberately outside the admin router's auth gate,
+    because an <img src="..."> can't attach a bearer token. Knowing the
+    exact table/row/column combination is required to fetch anything
+    here, and the images involved (logos, profile photos) aren't
+    sensitive - same reasoning as /company/logo and /users/photo/{id}."""
+    from fastapi import HTTPException, status
+    from fastapi.responses import Response
+
+    from app.api.v1.admin_registry import AdminRegistry
+    from app.core.storage import get_storage
+
+    spec = AdminRegistry.get(table)
+    if spec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown table.")
+    row = db.get(spec.model, row_id)
+    if row is None or not getattr(row, column, None):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No image set.")
+    key = getattr(row, column)
+    storage = get_storage()
+    if not storage.exists(key):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Image file is missing.")
+    ext = key.rsplit(".", 1)[-1]
+    media_type = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "application/octet-stream")
+    return Response(content=storage.read(key), media_type=media_type)
 
 
 @router.get("/services")
