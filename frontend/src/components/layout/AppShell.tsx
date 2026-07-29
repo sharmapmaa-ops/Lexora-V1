@@ -8,7 +8,6 @@ import {
   LifeBuoy,
   ShieldCheck,
   LayoutGrid,
-  Building2,
   LogOut,
   ChevronDown,
   User,
@@ -17,6 +16,7 @@ import {
   Instagram,
   Linkedin,
   Youtube,
+  Bell,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAuthStore } from "@/lib/authStore";
@@ -40,7 +40,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/support", label: "Support", icon: LifeBuoy },
   { to: "/admin/overview", label: "Admin Overview", icon: LayoutGrid, adminOnly: true },
   { to: "/admin", label: "Admin Panel", icon: ShieldCheck, adminOnly: true },
-  { to: "/admin/company", label: "Company Settings", icon: Building2, adminOnly: true },
 ];
 
 interface PublicCompany {
@@ -59,6 +58,12 @@ export function AppShell() {
   const { data: company } = useQuery<PublicCompany>({
     queryKey: ["public-company"],
     queryFn: () => api.get("/company").then((r) => r.data),
+  });
+
+  const { data: unreadCount } = useQuery<{ count: number }>({
+    queryKey: ["notifications-unread-count"],
+    queryFn: () => api.get("/notifications/unread-count").then((r) => r.data),
+    refetchInterval: 30_000,
   });
 
   // The dropdown wasn't auto-closing on an outside click - only on
@@ -93,7 +98,7 @@ export function AppShell() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/admin"}
+              end={item.to === "/admin" || item.to === "/services"}
               className={({ isActive }) =>
                 clsx(
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -141,6 +146,14 @@ export function AppShell() {
         {/* Topbar - just identity + plan badge; primary nav lives in
             the sidebar so this stays uncluttered. */}
         <header className="flex h-16 shrink-0 items-center justify-end gap-4 border-b border-brand-100 bg-white px-6">
+          <Link to="/notifications" className="relative rounded-lg p-2 text-brand-400 hover:bg-brand-50 hover:text-brand-700">
+            <Bell size={20} />
+            {(unreadCount?.count ?? 0) > 0 && (
+              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white">
+                {unreadCount!.count > 9 ? "9+" : unreadCount!.count}
+              </span>
+            )}
+          </Link>
           <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setProfileOpen((v) => !v)}

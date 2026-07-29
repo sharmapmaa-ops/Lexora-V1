@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Save, X, Trash2, Plus } from "lucide-react";
+import { Plus, Trash2, Search, X, Upload } from "lucide-react";
 import { api, apiErrorMessage } from "@/lib/api";
 
 interface TableInfo {
@@ -12,6 +12,8 @@ interface TableInfo {
 interface Column {
   name: string;
   type: string;
+  field_type: "text" | "number" | "boolean" | "date" | "datetime" | "select" | "multiselect" | "json" | "image";
+  options: string[] | null;
   primary_key: boolean;
   editable: boolean;
 }
@@ -35,11 +37,82 @@ function rowKey(row: Record<string, unknown>, columns: Column[]): string {
   return pk ? String(row[pk.name]) : JSON.stringify(row);
 }
 
+/** Type-aware input for a single field in the row-edit form - this is
+ * the actual fix for "every field was a plain text box": a date column
+ * gets a date picker, an enum gets a dropdown, a boolean gets a
+ * checkbox, and an image column gets a file-select button instead of
+ * a text box holding a storage key nobody should hand-edit. */
+function FieldInput({
+  col,
+  value,
+  onChange,
+  onImageSelect,
+  imageUrl,
+}: {
+  col: Column;
+  value: string;
+  onChange: (v: string) => void;
+  onImageSelect: (file: File) => void;
+  imageUrl: string | null;
+}) {
+  if (!col.editable) {
+    return <input className="input bg-brand-50 !py-1.5 text-xs" value={value} disabled />;
+  }
+
+  switch (col.field_type) {
+    case "boolean":
+      return (
+        <select className="input !py-1.5" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+      );
+    case "select":
+      return (
+        <select className="input !py-1.5" value={value} onChange={(e) => onChange(e.target.value)}>
+          {(col.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      );
+    case "date":
+      return <input type="date" className="input !py-1.5" value={value?.slice(0, 10) ?? ""} onChange={(e) => onChange(e.target.value)} />;
+    case "datetime":
+      return <input type="datetime-local" className="input !py-1.5" value={value?.slice(0, 16) ?? ""} onChange={(e) => onChange(e.target.value)} />;
+    case "number":
+      return <input type="number" step="any" className="input !py-1.5" value={value} onChange={(e) => onChange(e.target.value)} />;
+    case "json":
+    case "multiselect":
+      return <textarea className="input !py-1.5 font-mono text-xs" rows={3} value={value} onChange={(e) => onChange(e.target.value)} />;
+    case "image":
+      return (
+        <div className="flex items-center gap-2">
+          {imageUrl && (
+            <img src={imageUrl} alt="" className="h-10 w-10 rounded-lg border border-brand-100 object-cover" />
+          )}
+          <label className="btn-secondary !py-1.5 text-xs cursor-pointer">
+            <Upload size={13} /> {value ? "Replace" : "Upload"} image
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImageSelect(f); }}
+            />
+          </label>
+        </div>
+      );
+    default:
+      return <input className="input !py-1.5" value={value} onChange={(e) => onChange(e.target.value)} />;
+  }
+}
+
 export function AdminPage() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [openRowKey, setOpenRowKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: tables } = useQuery<TableInfo[]>({
@@ -57,6 +130,15 @@ export function AdminPage() {
     enabled: !!selected,
   });
 
+  const filteredRows = useMemo(() => {
+    if (!tableData) return [];
+    if (!search.trim()) return tableData.rows;
+    const q = search.toLowerCase();
+    return tableData.rows.filter((row) =>
+      tableData.columns.some((c) => formatCell(row[c.name]).toLowerCase().includes(q))
+    );
+  }, [tableData, search]);
+
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["admin-table", selected] });
     queryClient.invalidateQueries({ queryKey: ["admin-tables"] });
@@ -67,11 +149,7 @@ export function AdminPage() {
       const pk = tableData!.columns.find((c) => c.primary_key)!;
       return api.put(`/admin/tables/${selected}/${row[pk.name]}`, draft);
     },
-    onSuccess: () => {
-      setEditingKey(null);
-      setError(null);
-      invalidate();
-    },
+    onSuccess: () => { setOpenRowKey(null); setError(null); invalidate(); },
     onError: (err) => setError(apiErrorMessage(err, "Could not save this row.")),
   });
 
@@ -80,42 +158,49 @@ export function AdminPage() {
       const pk = tableData!.columns.find((c) => c.primary_key)!;
       return api.delete(`/admin/tables/${selected}/${row[pk.name]}`);
     },
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
+    onSuccess: () => { setOpenRowKey(null); setError(null); invalidate(); },
     onError: (err) => setError(apiErrorMessage(err, "Could not delete this row.")),
   });
 
   const createMutation = useMutation({
     mutationFn: () => api.post(`/admin/tables/${selected}`, draft),
-    onSuccess: () => {
-      setEditingKey(null);
-      setError(null);
-      invalidate();
-    },
+    onSuccess: () => { setIsCreating(false); setError(null); invalidate(); },
     onError: (err) => setError(apiErrorMessage(err, "Could not create this row.")),
   });
 
-  function startEdit(row: Record<string, unknown>) {
+  const [imageCacheBust, setImageCacheBust] = useState(0);
+
+  const imageUploadMutation = useMutation({
+    mutationFn: ({ row, column, file }: { row: Record<string, unknown>; column: string; file: File }) => {
+      const pk = tableData!.columns.find((c) => c.primary_key)!;
+      const formData = new FormData();
+      formData.append("file", file);
+      return api.post(`/admin/tables/${selected}/${row[pk.name]}/upload/${column}`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => { invalidate(); setImageCacheBust((n) => n + 1); },
+    onError: (err) => setError(apiErrorMessage(err, "Could not upload this image.")),
+  });
+
+  function openRow(row: Record<string, unknown>) {
     const initial: Record<string, string> = {};
-    tableData?.columns.forEach((c) => {
-      initial[c.name] = formatCell(row[c.name]);
-    });
+    tableData?.columns.forEach((c) => { initial[c.name] = formatCell(row[c.name]); });
     setDraft(initial);
-    setEditingKey(rowKey(row, tableData?.columns ?? []));
+    setOpenRowKey(rowKey(row, tableData?.columns ?? []));
     setError(null);
   }
 
   function startCreate() {
     const initial: Record<string, string> = {};
-    tableData?.columns.forEach((c) => {
-      initial[c.name] = "";
-    });
+    tableData?.columns.forEach((c) => { initial[c.name] = ""; });
     setDraft(initial);
-    setEditingKey("__new__");
+    setIsCreating(true);
     setError(null);
   }
+
+  const activeRow = tableData?.rows.find((r) => rowKey(r, tableData.columns) === openRowKey);
+  const pkColumn = tableData?.columns.find((c) => c.primary_key);
 
   return (
     <div className="max-w-6xl">
@@ -130,27 +215,29 @@ export function AdminPage() {
       </div>
 
       <div className="mt-6 card">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm font-semibold text-brand-600">Table</label>
           <select
             className="input max-w-xs"
             value={selected ?? ""}
-            onChange={(e) => {
-              setSelected(e.target.value);
-              setEditingKey(null);
-            }}
+            onChange={(e) => { setSelected(e.target.value); setSearch(""); }}
           >
             {tables?.map((t) => (
-              <option key={t.name} value={t.name}>
-                {t.display_name}
-              </option>
+              <option key={t.name} value={t.name}>{t.display_name}</option>
             ))}
           </select>
-        </div>
 
-        {error && (
-          <div className="mt-3 rounded-lg bg-danger-500/10 px-3.5 py-2.5 text-sm text-danger-600">{error}</div>
-        )}
+          {/* Filter bar */}
+          <div className="relative ml-auto min-w-[220px]">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-brand-300" />
+            <input
+              className="input !py-2 pl-8"
+              placeholder="Filter rows…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
 
         <div className="mt-4 overflow-x-auto rounded-lg border border-brand-100">
           <table className="w-full text-sm">
@@ -158,94 +245,104 @@ export function AdminPage() {
               <tr>
                 {tableData?.columns.map((col) => (
                   <th key={col.name} className="whitespace-nowrap px-4 py-2.5 font-semibold">
-                    {col.name}
-                    {col.primary_key && " \uD83D\uDD11"}
+                    {col.name}{col.primary_key && " \uD83D\uDD11"}
                   </th>
                 ))}
-                <th className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody>
-              {editingKey === "__new__" && (
-                <tr className="border-t border-brand-50 bg-accent-500/5">
+              {filteredRows.map((row, i) => (
+                <tr
+                  key={i}
+                  onClick={() => openRow(row)}
+                  className="cursor-pointer border-t border-brand-50 hover:bg-brand-50"
+                >
                   {tableData?.columns.map((col) => (
-                    <td key={col.name} className="px-4 py-2">
-                      <input
-                        className="input !py-1 text-xs"
-                        disabled={!col.editable}
-                        value={draft[col.name] ?? ""}
-                        onChange={(e) => setDraft({ ...draft, [col.name]: e.target.value })}
-                      />
+                    <td key={col.name} className="whitespace-nowrap px-4 py-2 text-brand-700">
+                      {col.field_type === "image" && row[col.name] ? (
+                        <span className="rounded bg-accent-500/10 px-2 py-0.5 text-xs text-accent-600">Image set</span>
+                      ) : (
+                        formatCell(row[col.name])
+                      )}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap px-4 py-2">
-                    <button onClick={() => createMutation.mutate()} className="mr-2 text-accent-600 hover:text-accent-700">
-                      <Save size={16} />
-                    </button>
-                    <button onClick={() => setEditingKey(null)} className="text-brand-400 hover:text-danger-600">
-                      <X size={16} />
-                    </button>
+                </tr>
+              ))}
+              {!filteredRows.length && (
+                <tr>
+                  <td colSpan={tableData?.columns.length ?? 1} className="px-4 py-6 text-center text-brand-300">
+                    No rows match this filter.
                   </td>
                 </tr>
               )}
-              {tableData?.rows.map((row, i) => {
-                const key = rowKey(row, tableData.columns);
-                const isEditing = editingKey === key;
-                return (
-                  <tr key={i} className="border-t border-brand-50">
-                    {tableData.columns.map((col) => (
-                      <td key={col.name} className="whitespace-nowrap px-4 py-2 text-brand-700">
-                        {isEditing ? (
-                          <input
-                            className="input !py-1 text-xs"
-                            disabled={!col.editable}
-                            value={draft[col.name] ?? ""}
-                            onChange={(e) => setDraft({ ...draft, [col.name]: e.target.value })}
-                          />
-                        ) : (
-                          formatCell(row[col.name])
-                        )}
-                      </td>
-                    ))}
-                    <td className="whitespace-nowrap px-4 py-2">
-                      {isEditing ? (
-                        <>
-                          <button
-                            onClick={() => saveMutation.mutate(row)}
-                            className="mr-2 text-accent-600 hover:text-accent-700"
-                            title="Save"
-                          >
-                            <Save size={16} />
-                          </button>
-                          <button onClick={() => setEditingKey(null)} className="text-brand-400 hover:text-danger-600" title="Cancel">
-                            <X size={16} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => startEdit(row)} className="mr-2 text-brand-500 hover:text-brand-700" title="Edit">
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm("Delete this row? This cannot be undone.")) deleteMutation.mutate(row);
-                            }}
-                            className="text-brand-400 hover:text-danger-600"
-                            title="Delete"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
             </tbody>
           </table>
         </div>
-        {tableData && <p className="mt-2 text-xs text-brand-300">{tableData.total} row(s)</p>}
+        {tableData && (
+          <p className="mt-2 text-xs text-brand-300">
+            {filteredRows.length} of {tableData.total} row(s){search && " (filtered)"} — click a row to edit
+          </p>
+        )}
       </div>
+
+      {/* Row-edit form modal - opens on row click (or Add Row), shows
+          every field as a type-aware input rather than an inline text
+          box, per column's field_type from the backend. */}
+      {(activeRow || isCreating) && tableData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/50 p-6">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl2 bg-white p-6 shadow-popover">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-brand-900">
+                {isCreating ? "Add Row" : `Edit Row`}
+              </h3>
+              <button onClick={() => { setOpenRowKey(null); setIsCreating(false); }} className="text-brand-400 hover:text-danger-600">
+                <X size={18} />
+              </button>
+            </div>
+
+            {error && <div className="mt-3 rounded-lg bg-danger-500/10 px-3.5 py-2.5 text-sm text-danger-600">{error}</div>}
+
+            <div className="mt-4 space-y-3">
+              {tableData.columns.map((col) => (
+                <div key={col.name}>
+                  <label className="label">{col.name}{col.primary_key && " (primary key)"}</label>
+                  <FieldInput
+                    col={col}
+                    value={draft[col.name] ?? ""}
+                    onChange={(v) => setDraft({ ...draft, [col.name]: v })}
+                    onImageSelect={(file) => {
+                      if (activeRow) imageUploadMutation.mutate({ row: activeRow, column: col.name, file });
+                    }}
+                    imageUrl={
+                      col.field_type === "image" && activeRow && pkColumn && activeRow[col.name]
+                        ? `/api/v1/admin-image/${selected}/${activeRow[pkColumn.name]}/${col.name}?t=${imageCacheBust}`
+                        : null
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              {!isCreating && activeRow && (
+                <button
+                  onClick={() => { if (confirm("Delete this row? This cannot be undone.")) deleteMutation.mutate(activeRow); }}
+                  className="btn-danger"
+                >
+                  <Trash2 size={15} /> Delete
+                </button>
+              )}
+              <button
+                onClick={() => (isCreating ? createMutation.mutate() : activeRow && saveMutation.mutate(activeRow))}
+                disabled={saveMutation.isPending || createMutation.isPending}
+                className="btn-primary ml-auto"
+              >
+                {isCreating ? "Create" : "Save changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

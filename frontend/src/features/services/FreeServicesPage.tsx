@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { PDFDocument, degrees } from "pdf-lib";
-import { Combine, Scissors, RotateCw, Upload, Download, X, FileText } from "lucide-react";
-import { CreatePdf, PdfToImage, CompressPdf } from "@/features/services/free-tools/MorePdfTools";
+import { Combine, Scissors, RotateCw, Upload, Download, X, ArrowLeft } from "lucide-react";
+import { clsx } from "clsx";
+import { CreatePdf, PdfToImage, CompressPdf, PdfToWord, PdfFormFiller } from "@/features/services/free-tools/MorePdfTools";
 import { ImageToPdf, ImageCompressor, ImageCropper, ResizePhoto } from "@/features/services/free-tools/ImageTools";
 import { EmiCalculator, GratuityCalculator, AgeCalculator, UnitConverter, CurrencyConverter } from "@/features/services/free-tools/Calculators";
 import { WordCounter, JsonCsvConverter, DataComparison } from "@/features/services/free-tools/DataTools";
@@ -292,90 +293,89 @@ function RotateTool() {
   );
 }
 
-function ComingSoonCard({ label, desc }: { label: string; desc: string }) {
-  return (
-    <div className="card border-dashed opacity-60">
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-300">
-          <FileText size={20} />
-        </div>
-        <div>
-          <h3 className="font-display font-semibold text-brand-700">{label}</h3>
-          <p className="text-sm text-brand-400">{desc}</p>
-        </div>
-      </div>
-      <span className="mt-4 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-400">
-        Coming soon
-      </span>
-    </div>
-  );
-}
+type ToolMeta = {
+  id: string;
+  label: string;
+  icon: string;
+  desc: string;
+  comingSoon?: boolean;
+  Component?: () => JSX.Element;
+};
 
-const CATEGORIES: Record<string, { icon: string; render: () => JSX.Element[] }> = {
+const CATEGORIES: Record<string, { icon: string; tools: ToolMeta[] }> = {
   "PDF Tools": {
     icon: "\uD83D\uDCC4",
-    render: () => [
-      <MergeTool key="merge" />,
-      <SplitTool key="split" />,
-      <RotateTool key="rotate" />,
-      <CompressPdf key="compress" />,
-      <PdfToImage key="pdf-to-image" />,
-      <CreatePdf key="create-pdf" />,
-      <ComingSoonCard key="pdf-to-word" label="PDF to Word" desc="Convert a PDF into an editable Word document." />,
-      <ComingSoonCard key="form-filler" label="PDF Form Filler" desc="Fill in fillable PDF form fields." />,
+    tools: [
+      { id: "merge", label: "Merge PDF", icon: "\uD83D\uDD17", desc: "Combine several PDFs into one.", Component: MergeTool },
+      { id: "split", label: "Split PDF", icon: "\u2702\uFE0F", desc: "Extract selected pages into a new PDF.", Component: SplitTool },
+      { id: "rotate", label: "Rotate PDF", icon: "\uD83D\uDD04", desc: "Rotate every page by 90/180/270\u00b0.", Component: RotateTool },
+      { id: "compress", label: "Compress PDF", icon: "\uD83D\uDDDC\uFE0F", desc: "Reduce file size by re-rendering pages.", Component: CompressPdf },
+      { id: "pdf-to-image", label: "PDF to Image", icon: "\uD83D\uDCF8", desc: "Export every page as a PNG.", Component: PdfToImage },
+      { id: "pdf-to-word", label: "PDF to Word", icon: "\uD83D\uDCC3", desc: "Extract text into an editable Word doc.", Component: PdfToWord },
+      { id: "form-filler", label: "PDF Form Filler", icon: "\uD83D\uDCDD", desc: "Fill in fillable PDF form fields.", Component: PdfFormFiller },
+      { id: "create-pdf", label: "Create PDF", icon: "\u2795", desc: "Turn plain text into a formatted PDF.", Component: CreatePdf },
     ],
   },
   "Image Tools": {
     icon: "\uD83D\uDDBC\uFE0F",
-    render: () => [
-      <ImageToPdf key="image-to-pdf" />,
-      <ImageCompressor key="image-compressor" />,
-      <ImageCropper key="image-cropper" />,
-      <ResizePhoto key="resize-photo" />,
+    tools: [
+      { id: "image-to-pdf", label: "Image to PDF", icon: "\uD83D\uDDBC\uFE0F", desc: "JPG/PNG images into a single PDF.", Component: ImageToPdf },
+      { id: "image-compressor", label: "Image Compressor", icon: "\uD83D\uDDDC\uFE0F", desc: "Reduce image file size.", Component: ImageCompressor },
+      { id: "image-cropper", label: "Image Cropper", icon: "\u2702\uFE0F", desc: "Crop to an exact pixel region.", Component: ImageCropper },
+      { id: "resize-photo", label: "Resize Photo", icon: "\uD83D\uDCD0", desc: "Standard ID photo sizes or custom.", Component: ResizePhoto },
     ],
   },
   Calculators: {
     icon: "\uD83E\uDDEE",
-    render: () => [
-      <EmiCalculator key="emi" />,
-      <GratuityCalculator key="gratuity" />,
-      <AgeCalculator key="age" />,
-      <UnitConverter key="unit" />,
-      <CurrencyConverter key="currency" />,
+    tools: [
+      { id: "emi", label: "EMI Calculator", icon: "\uD83C\uDFE6", desc: "Monthly instalment and total interest.", Component: EmiCalculator },
+      { id: "gratuity", label: "Gratuity Calculator", icon: "\uD83D\uDCBC", desc: "Estimate a gratuity payout.", Component: GratuityCalculator },
+      { id: "age", label: "Age Calculator", icon: "\uD83C\uDF82", desc: "Exact age in years/months/days.", Component: AgeCalculator },
+      { id: "unit", label: "Unit Converter", icon: "\uD83D\uDCCF", desc: "Length, weight, and temperature.", Component: UnitConverter },
+      { id: "currency", label: "Currency Converter", icon: "\uD83D\uDCB1", desc: "Quick currency estimate.", Component: CurrencyConverter },
     ],
   },
   "Data Tools": {
     icon: "\uD83D\uDCCA",
-    render: () => [
-      <WordCounter key="word-counter" />,
-      <JsonCsvConverter key="json-csv" />,
-      <DataComparison key="data-comparison" />,
-      <ComingSoonCard key="etl" label="ETL" desc="Extract, transform, and load data between formats." />,
+    tools: [
+      { id: "word-counter", label: "Word Counter", icon: "\uD83D\uDCC4", desc: "Words, characters, sentences.", Component: WordCounter },
+      { id: "json-csv", label: "JSON \u2194 CSV", icon: "\uD83D\uDCC8", desc: "Convert between JSON and CSV.", Component: JsonCsvConverter },
+      { id: "data-comparison", label: "Data Comparison", icon: "\uD83D\uDD00", desc: "Line-by-line text comparison.", Component: DataComparison },
+      { id: "etl", label: "ETL", icon: "\u2699\uFE0F", desc: "Extract, transform, and load data between formats.", comingSoon: true },
     ],
   },
   "Document Builders": {
     icon: "\uD83D\uDCDD",
-    render: () => [
-      <InvoiceGenerator key="invoice" />,
-      <QuotationGenerator key="quotation" />,
-      <ReceiptGenerator key="receipt" />,
-      <EmailTemplateBuilder key="email" />,
-      <LetterBuilder key="letter" />,
+    tools: [
+      { id: "invoice", label: "Invoice Generator", icon: "\uD83E\uDDFE", desc: "Create a professional invoice PDF.", Component: InvoiceGenerator },
+      { id: "quotation", label: "Quotation Generator", icon: "\uD83D\uDCCB", desc: "Create a price quotation PDF.", Component: QuotationGenerator },
+      { id: "receipt", label: "Receipt Generator", icon: "\uD83E\uDDFE", desc: "Create a payment receipt PDF.", Component: ReceiptGenerator },
+      { id: "email", label: "Email Template", icon: "\u2709\uFE0F", desc: "Ready-to-send email drafts.", Component: EmailTemplateBuilder },
+      { id: "letter", label: "Create Letters", icon: "\u270D\uFE0F", desc: "A simple formal letter as PDF.", Component: LetterBuilder },
     ],
   },
   Utilities: {
     icon: "\uD83D\uDD27",
-    render: () => [
-      <TimezoneConverter key="timezone" />,
-      <PasswordGenerator key="password" />,
-      <QrCodeGenerator key="qr" />,
-      <ComingSoonCard key="barcode" label="Barcode Generator" desc="Generate common 1D barcode formats." />,
+    tools: [
+      { id: "timezone", label: "Timezone Converter", icon: "\uD83D\uDD5A\uFE0F", desc: "Compare times across zones.", Component: TimezoneConverter },
+      { id: "password", label: "Password Generator", icon: "\uD83D\uDD11", desc: "Cryptographically random passwords.", Component: PasswordGenerator },
+      { id: "qr", label: "QR Code Generator", icon: "\uD83D\uDD32", desc: "Turn text/URL into a QR code.", Component: QrCodeGenerator },
+      { id: "barcode", label: "Barcode Generator", icon: "\uD83D\uDCCA", desc: "Generate common 1D barcode formats.", comingSoon: true },
     ],
   },
 };
 
 export function FreeServicesPage() {
   const [category, setCategory] = useState<keyof typeof CATEGORIES>("PDF Tools");
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+
+  const tools = CATEGORIES[category].tools;
+  const activeTool = tools.find((t) => t.id === selectedTool);
+
+  function selectCategory(cat: keyof typeof CATEGORIES) {
+    setCategory(cat);
+    setSelectedTool(null); // picking a new category always goes back to its thumbnail grid
+  }
 
   return (
     <div className="max-w-5xl">
@@ -389,7 +389,7 @@ export function FreeServicesPage() {
         {Object.keys(CATEGORIES).map((cat) => (
           <button
             key={cat}
-            onClick={() => setCategory(cat as keyof typeof CATEGORIES)}
+            onClick={() => selectCategory(cat as keyof typeof CATEGORIES)}
             className={category === cat ? "btn-primary !py-2" : "btn-secondary !py-2"}
           >
             {CATEGORIES[cat].icon} {cat}
@@ -397,9 +397,57 @@ export function FreeServicesPage() {
         ))}
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {CATEGORIES[category].render()}
-      </div>
+      {/* Step 1: category selected -> show thumbnails for every tool in
+          it. Step 2: a specific thumbnail clicked -> show that tool's
+          actual working UI, with a way back to the thumbnail grid. */}
+      {activeTool ? (
+        <div className="mt-6">
+          <button
+            onClick={() => setSelectedTool(null)}
+            className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-500 hover:text-brand-700"
+          >
+            <ArrowLeft size={15} /> Back to {category}
+          </button>
+          {activeTool.Component ? (
+            <activeTool.Component />
+          ) : (
+            <div className="card border-dashed opacity-60">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{activeTool.icon}</span>
+                <div>
+                  <h3 className="font-display font-semibold text-brand-700">{activeTool.label}</h3>
+                  <p className="text-sm text-brand-400">{activeTool.desc}</p>
+                </div>
+              </div>
+              <span className="mt-4 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-400">
+                Coming soon
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {tools.map((tool) => (
+            <button
+              key={tool.id}
+              onClick={() => setSelectedTool(tool.id)}
+              className={clsx(
+                "card !p-4 text-left transition-transform hover:-translate-y-0.5",
+                tool.comingSoon && "border-dashed opacity-60"
+              )}
+            >
+              <span className="text-2xl">{tool.icon}</span>
+              <div className="mt-2 font-display text-sm font-semibold text-brand-900">{tool.label}</div>
+              <p className="mt-1 text-xs text-brand-400">{tool.desc}</p>
+              {tool.comingSoon && (
+                <span className="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-400">
+                  Coming soon
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

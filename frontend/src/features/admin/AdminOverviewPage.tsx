@@ -100,6 +100,43 @@ export function AdminOverviewPage() {
         </div>
       </div>
 
+      {/* Trending Services / Trending Plans - ranked lists reusing the
+          same aggregate data as the charts above, just sorted and
+          presented as a leaderboard rather than a chart. */}
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="card">
+          <h3 className="font-display text-lg font-semibold text-brand-900">Trending Services</h3>
+          <div className="mt-3 space-y-2">
+            {[...jobsData].sort((a, b) => b.count - a.count).map((s, i) => (
+              <div key={s.service} className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-600">
+                  {i + 1}
+                </span>
+                <span className="flex-1 text-sm capitalize text-brand-800">{s.service}</span>
+                <span className="text-sm font-semibold text-brand-900">{s.count} job(s)</span>
+              </div>
+            ))}
+            {!jobsData.length && <p className="text-sm text-brand-300">No jobs processed yet.</p>}
+          </div>
+        </div>
+
+        <div className="card">
+          <h3 className="font-display text-lg font-semibold text-brand-900">Trending Plans</h3>
+          <div className="mt-3 space-y-2">
+            {[...planData].sort((a, b) => b.value - a.value).map((p, i) => (
+              <div key={p.name} className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-600">
+                  {i + 1}
+                </span>
+                <span className="flex-1 text-sm capitalize text-brand-800">{p.name}</span>
+                <span className="text-sm font-semibold text-brand-900">{p.value} user(s)</span>
+              </div>
+            ))}
+            {!planData.length && <p className="text-sm text-brand-300">No users yet.</p>}
+          </div>
+        </div>
+      </div>
+
       <div className="card mt-6">
         <h3 className="font-display text-lg font-semibold text-brand-900">Recent Signups</h3>
         <div className="mt-3 space-y-2">
